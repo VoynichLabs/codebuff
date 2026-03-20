@@ -2,6 +2,21 @@
 
 All notable changes to PlanExe CLI will be documented in this file.
 
+## [0.0.3] - 2026-03-20
+
+### Fixed
+- "Starting Codebuff..." → "Starting PlanExe..." in download message
+- "Failed to download codebuff" → "Failed to download planexe" in error message
+- Metadata filename: `codebuff-metadata.json` → `planexe-metadata.json`
+- Analytics event name: `cli.update_codebuff_failed` → `cli.update_planexe_failed`
+- Linux x64 binary included in release (was missing in v0.0.2 initial upload)
+
+### Added
+- AGENTS.md with boss's coding standards
+- CHANGELOG.md (this file)
+
+**Authors:** Bubba (claude-opus-4-6), Egon (claude-opus-4-6) — QA
+
 ## [0.0.2] - 2026-03-20
 
 ### Added

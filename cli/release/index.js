@@ -23,7 +23,7 @@ function createConfig(packageName) {
     configDir,
     binaryName,
     binaryPath: path.join(configDir, binaryName),
-    metadataPath: path.join(configDir, 'codebuff-metadata.json'),
+    metadataPath: path.join(configDir, 'planexe-metadata.json'),
     tempDownloadDir: path.join(configDir, '.download-temp'),
     userAgent: `${packageName}-cli`,
     requestTimeout: 20000,
@@ -60,7 +60,7 @@ function trackUpdateFailed(errorMessage, version, context = {}) {
 
     const payload = JSON.stringify({
       api_key: posthogConfig.apiKey,
-      event: 'cli.update_codebuff_failed',
+      event: 'cli.update_planexe_failed',
       properties: {
         distinct_id: `anonymous-${CONFIG.homeDir}`,
         error: errorMessage,
@@ -385,7 +385,7 @@ async function downloadBinary(version) {
   }
 
   term.clearLine()
-  console.log('Download complete! Starting Codebuff...')
+  console.log('Download complete! Starting PlanExe...')
 }
 
 async function ensureBinaryExists() {
@@ -405,7 +405,7 @@ async function ensureBinaryExists() {
     await downloadBinary(version)
   } catch (error) {
     term.clearLine()
-    console.error('❌ Failed to download codebuff:', error.message)
+    console.error('❌ Failed to download planexe:', error.message)
     console.error('Please check your internet connection and try again')
     process.exit(1)
   }
