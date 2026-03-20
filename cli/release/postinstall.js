@@ -8,7 +8,7 @@ const path = require('path');
 const binaryPath = path.join(
   os.homedir(),
   '.config',
-  'manicode',
+  'planexe',
   process.platform === 'win32' ? 'planexe.exe' : 'planexe'
 );
 

@@ -2,6 +2,19 @@
 
 All notable changes to PlanExe CLI will be documented in this file.
 
+## [0.0.4] - 2026-03-20
+
+### Fixed
+- Config directory: `~/.config/manicode/` → `~/.config/planexe/` (launcher + postinstall + preuninstall)
+- PostHog env vars: `CODEBUFF_POSTHOG_*` → `PLANEXE_POSTHOG_*`
+- Preuninstall script: now cleans up `planexe` binary, not `codebuff`
+- Linux x64 binary included in release (was missing from v0.0.3)
+
+### Changed
+- Zero remaining `codebuff` or `manicode` references in launcher package
+
+**Authors:** Bubba (claude-opus-4-6), Egon (claude-opus-4-6) — QA
+
 ## [0.0.3] - 2026-03-20
 
 ### Fixed

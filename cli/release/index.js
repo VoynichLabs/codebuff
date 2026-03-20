@@ -14,7 +14,7 @@ const packageName = 'planexe'
 
 function createConfig(packageName) {
   const homeDir = os.homedir()
-  const configDir = path.join(homeDir, '.config', 'manicode')
+  const configDir = path.join(homeDir, '.config', 'planexe')
   const binaryName =
     process.platform === 'win32' ? `${packageName}.exe` : packageName
 
@@ -34,10 +34,10 @@ const CONFIG = createConfig(packageName)
 
 function getPostHogConfig() {
   const apiKey =
-    process.env.CODEBUFF_POSTHOG_API_KEY ||
+    process.env.PLANEXE_POSTHOG_API_KEY ||
     process.env.NEXT_PUBLIC_POSTHOG_API_KEY
   const host =
-    process.env.CODEBUFF_POSTHOG_HOST ||
+    process.env.PLANEXE_POSTHOG_HOST ||
     process.env.NEXT_PUBLIC_POSTHOG_HOST_URL
 
   if (!apiKey || !host) {
