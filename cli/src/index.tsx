@@ -19,6 +19,7 @@ import { cyan, green, red, yellow } from 'picocolors'
 import React from 'react'
 
 import { App } from './app'
+import { AuthMethodSelector } from './components/auth-method-selector'
 import { handlePublish } from './commands/publish'
 import { runPlainLogin } from './login/plain-login'
 import { initializeApp } from './init/init-app'
@@ -31,6 +32,7 @@ import { IS_FREEBUFF } from './utils/constants'
 import { getCliEnv } from './utils/env'
 import { initializeAgentRegistry } from './utils/local-agent-registry'
 import { clearLogFile, logger } from './utils/logger'
+import { hasPlanExeAuth } from './utils/planexe-auth'
 import { shouldShowProjectPicker } from './utils/project-picker'
 import { saveRecentProject } from './utils/recent-projects'
 import { installProcessCleanupHandlers } from './utils/renderer-cleanup'
@@ -275,27 +277,26 @@ async function main(): Promise<void> {
   const queryClient = createQueryClient()
 
   const AppWithAsyncAuth = () => {
-    const [requireAuth, setRequireAuth] = React.useState<boolean | null>(null)
-    const [hasInvalidCredentials, setHasInvalidCredentials] =
-      React.useState(false)
+    // PlanExe v0.0.2: skip codebuff.com login, use local auth config
+    const [authConfigured, setAuthConfigured] = React.useState<boolean>(() => hasPlanExeAuth())
     const [fileTree, setFileTree] = React.useState<FileTreeNode[]>([])
     const [currentProjectRoot, setCurrentProjectRoot] =
       React.useState(projectRoot)
     const [showProjectPickerScreen, setShowProjectPickerScreen] =
       React.useState(showProjectPicker)
 
-    React.useEffect(() => {
-      const apiKey = getAuthTokenDetails().token ?? ''
+    // If auth not yet configured, show auth method selector
+    if (!authConfigured) {
+      return (
+        <AuthMethodSelector
+          onAuthConfigured={() => setAuthConfigured(true)}
+        />
+      )
+    }
 
-      if (!apiKey) {
-        setRequireAuth(true)
-        setHasInvalidCredentials(false)
-        return
-      }
-
-      setHasInvalidCredentials(true)
-      setRequireAuth(false)
-    }, [])
+    // Auth is configured — pass requireAuth=false to skip LoginModal entirely
+    const requireAuth = false
+    const hasInvalidCredentials = false
 
     const loadFileTree = React.useCallback(async (root: string) => {
       try {
