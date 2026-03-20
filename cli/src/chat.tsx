@@ -14,7 +14,6 @@ import { useShallow } from 'zustand/react/shallow'
 import { getAdsEnabled, handleAdsDisable } from './commands/ads'
 import { routeUserPrompt, addBashMessageToHistory } from './commands/router'
 import { AdBanner } from './components/ad-banner'
-import { BottomStatusLine } from './components/bottom-status-line'
 import { ChatInputBar } from './components/chat-input-bar'
 import { LoadPreviousButton } from './components/load-previous-button'
 import { ReviewScreen } from './components/review-screen'
@@ -35,7 +34,6 @@ import { useChatMessages } from './hooks/use-chat-messages'
 import { useChatState } from './hooks/use-chat-state'
 import { useChatStreaming } from './hooks/use-chat-streaming'
 import { useChatUI } from './hooks/use-chat-ui'
-import { useClaudeQuotaQuery } from './hooks/use-claude-quota-query'
 import { useSubscriptionQuery } from './hooks/use-subscription-query'
 import { useClipboard } from './hooks/use-clipboard'
 import { useEvent } from './hooks/use-event'
@@ -55,9 +53,9 @@ import { useMessageBlockStore } from './state/message-block-store'
 import { usePublishStore } from './state/publish-store'
 import { reportActivity } from './utils/activity-tracker'
 import { trackEvent } from './utils/analytics'
-import { getClaudeOAuthStatus } from './utils/claude-oauth'
 import { showClipboardMessage } from './utils/clipboard'
 import { readClipboardImage } from './utils/clipboard-image'
+import { IS_FREEBUFF } from './utils/constants'
 import { getInputModeConfig } from './utils/input-modes'
 
 import {
@@ -68,6 +66,7 @@ import { loadLocalAgents } from './utils/local-agent-registry'
 import { logger } from './utils/logger'
 import {
   addClipboardPlaceholder,
+  addPendingFileFromPath,
   addPendingImageFromFile,
   validateAndAddImage,
 } from './utils/pending-attachments'
@@ -162,18 +161,20 @@ export const Chat = ({
   } = useChatState()
 
   const { statusMessage } = useClipboard()
-  const { ad } = useGravityAd()
+
+  // Fetch subscription data early - needed for session credits tracking and ad gating
+  const { data: subscriptionData } = useSubscriptionQuery({
+    refetchInterval: 60 * 1000,
+  })
+  const hasSubscription = subscriptionData?.hasSubscription ?? false
+
+  const { ad } = useGravityAd({ enabled: IS_FREEBUFF || !hasSubscription })
   const [adsManuallyDisabled, setAdsManuallyDisabled] = useState(false)
 
   const handleDisableAds = useCallback(() => {
     handleAdsDisable()
     setAdsManuallyDisabled(true)
   }, [])
-
-  // Fetch subscription data early - needed for session credits tracking
-  const { data: subscriptionData } = useSubscriptionQuery({
-    refetchInterval: 60 * 1000,
-  })
 
   // Set initial mode from CLI flag on mount
   useEffect(() => {
@@ -221,16 +222,17 @@ export const Chat = ({
   const loadedSkills = useMemo(() => getLoadedSkills(), [])
 
   // Filter slash commands based on current ads state - only show the option that changes state
+  // Hide both ads commands entirely for subscribers
   // Also merge in skill commands
   const filteredSlashCommands = useMemo(() => {
     const adsEnabled = getAdsEnabled()
     const allCommands = getSlashCommandsWithSkills(loadedSkills)
     return allCommands.filter((cmd) => {
-      if (cmd.id === 'ads:enable') return !adsEnabled
-      if (cmd.id === 'ads:disable') return adsEnabled
+      if (cmd.id === 'ads:enable') return !hasSubscription && !adsEnabled
+      if (cmd.id === 'ads:disable') return !hasSubscription && adsEnabled
       return true
     })
-  }, [inputValue, loadedSkills]) // Re-evaluate when input changes (user may have just toggled)
+  }, [inputValue, loadedSkills, hasSubscription]) // Re-evaluate when input changes (user may have just toggled)
 
   const {
     slashContext,
@@ -583,7 +585,7 @@ export const Chat = ({
       if (index < agentMatches.length) {
         const selected = agentMatches[index]
         if (!selected) return
-        replacement = `@${selected.displayName} `
+        replacement = `@${selected.id} `
       } else {
         const fileIndex = index - agentMatches.length
         const selectedFile = fileMatches[fileIndex]
@@ -840,6 +842,12 @@ export const Chat = ({
     setInputFocused(true)
   }, [closeReviewScreen, setInputFocused])
 
+  const handleReviewCustom = useCallback(() => {
+    closeReviewScreen()
+    setInputMode('review')
+    setInputFocused(true)
+  }, [closeReviewScreen, setInputMode, setInputFocused])
+
   const handlePublish = useCallback(
     async (agentIds: string[]) => {
       await publishMutation.mutateAsync(agentIds)
@@ -1018,7 +1026,7 @@ export const Chat = ({
           if (index < agentMatches.length) {
             const selected = agentMatches[index]
             if (!selected) return false
-            replacement = `@${selected.displayName} `
+            replacement = `@${selected.id} `
           } else {
             const fileIndex = index - agentMatches.length
             const selectedFile = fileMatches[fileIndex]
@@ -1050,7 +1058,7 @@ export const Chat = ({
         if (index < agentMatches.length) {
           const selected = agentMatches.length > 0 ? (agentMatches[index] || agentMatches[0]) : undefined
           if (!selected) return
-          replacement = `@${selected.displayName} `
+          replacement = `@${selected.id} `
         } else {
           const fileIndex = index - agentMatches.length
           const selectedFile = fileMatches.length > 0 ? (fileMatches[fileIndex] || fileMatches[0]) : undefined
@@ -1125,6 +1133,9 @@ export const Chat = ({
           logger.error({ error, imagePath }, 'Failed to validate and add image')
           showClipboardMessage('Failed to add image', { durationMs: 3000 })
         })
+      },
+      onPasteFilePath: (filePath: string, isDirectory: boolean) => {
+        addPendingFileFromPath(filePath, isDirectory)
       },
       onPasteText: (text: string) => {
         setInputValue((prev) => {
@@ -1289,14 +1300,6 @@ export const Chat = ({
   })
   const hasStatusIndicatorContent = statusIndicatorState.kind !== 'idle'
 
-  const isClaudeOAuthActive = getClaudeOAuthStatus().connected
-
-  // Fetch Claude quota when OAuth is active
-  const { data: claudeQuota } = useClaudeQuotaQuery({
-    enabled: isClaudeOAuthActive,
-    refetchInterval: 60 * 1000, // Refetch every 60 seconds
-  })
-
   // Auto-show subscription limit banner when rate limit becomes active
   const subscriptionLimitShownRef = useRef(false)
   const subscriptionRateLimit = subscriptionData?.hasSubscription ? subscriptionData.rateLimit : undefined
@@ -1336,9 +1339,6 @@ export const Chat = ({
   const shouldShowStatusLine =
     !feedbackMode &&
     (hasStatusIndicatorContent || shouldShowQueuePreview || !isAtBottom)
-
-  // Determine if Claude is actively streaming/waiting
-  const isClaudeActive = isStreaming || isWaitingForResponse
 
   // Track mouse movement for ad activity (throttled)
   const lastMouseActivityRef = useRef<number>(0)
@@ -1443,17 +1443,18 @@ export const Chat = ({
           />
         )}
 
-        {ad && !adsManuallyDisabled && getAdsEnabled() && (
+        {ad && (IS_FREEBUFF || (!adsManuallyDisabled && getAdsEnabled())) && (
           <AdBanner
             ad={ad}
             onDisableAds={handleDisableAds}
-            isFreeMode={agentMode === 'FREE'}
+            isFreeMode={IS_FREEBUFF || agentMode === 'FREE'}
           />
         )}
 
         {reviewMode ? (
           <ReviewScreen
             onSelectOption={handleReviewOptionSelect}
+            onCustom={handleReviewCustom}
             onCancel={handleCloseReviewScreen}
           />
         ) : (
@@ -1497,6 +1498,7 @@ export const Chat = ({
               onChange: setInputValue,
               onPasteImage: chatKeyboardHandlers.onPasteImage,
               onPasteImagePath: chatKeyboardHandlers.onPasteImagePath,
+              onPasteFilePath: chatKeyboardHandlers.onPasteFilePath,
               onPasteLongText: (pastedText) => {
                 const id = crypto.randomUUID()
                 const preview = pastedText.slice(0, 100).replace(/\n/g, ' ')
@@ -1516,12 +1518,6 @@ export const Chat = ({
             })}
           />
         )}
-
-        <BottomStatusLine
-          isClaudeConnected={isClaudeOAuthActive}
-          isClaudeActive={isClaudeActive}
-          claudeQuota={claudeQuota}
-        />
       </box>
     </box>
   )

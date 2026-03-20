@@ -4,8 +4,8 @@ import { isFreeMode } from '@codebuff/common/constants/free-agents'
 import { getErrorObject } from '@codebuff/common/util/error'
 import { pluralize } from '@codebuff/common/util/string'
 import { env } from '@codebuff/internal/env'
+import geoip from 'geoip-lite'
 import { NextResponse } from 'next/server'
-
 
 import type { TrackEventFn } from '@codebuff/common/types/contracts/analytics'
 import type { InsertMessageBigqueryFn } from '@codebuff/common/types/contracts/bigquery'
@@ -36,8 +36,28 @@ import type { NextRequest } from 'next/server'
 import type { ChatCompletionRequestBody } from '@/llm-api/types'
 
 import {
+  CanopyWaveError,
+  handleCanopyWaveNonStream,
+  handleCanopyWaveStream,
+  isCanopyWaveModel,
+} from '@/llm-api/canopywave'
+import {
+  FireworksError,
+  handleFireworksNonStream,
+  handleFireworksStream,
+  isFireworksModel,
+} from '@/llm-api/fireworks'
+import {
+  SiliconFlowError,
+  handleSiliconFlowNonStream,
+  handleSiliconFlowStream,
+  isSiliconFlowModel,
+} from '@/llm-api/siliconflow'
+import {
   handleOpenAINonStream,
-  OPENAI_SUPPORTED_MODELS,
+  handleOpenAIStream,
+  isOpenAIDirectModel,
+  OpenAIError,
 } from '@/llm-api/openai'
 import {
   handleOpenRouterNonStream,
@@ -45,6 +65,36 @@ import {
   OpenRouterError,
 } from '@/llm-api/openrouter'
 import { extractApiKeyFromHeader } from '@/util/auth'
+import { withDefaultProperties } from '@codebuff/common/analytics'
+import { checkFreeModeRateLimit } from './free-mode-rate-limiter'
+
+const FREE_MODE_ALLOWED_COUNTRIES = new Set([
+  'US', 'CA',
+  'GB', 'AU', 'NZ',
+  'NO', 'SE', 'NL', 'DK', 'DE', 'FI', 'BE', 'LU', 'CH', 'IE', 'IS',
+])
+
+function extractClientIp(req: NextRequest): string | undefined {
+  const forwardedFor = req.headers.get('x-forwarded-for')
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0].trim()
+  }
+  return req.headers.get('x-real-ip') ?? undefined
+}
+
+function getCountryCode(req: NextRequest): string | null {
+  const cfCountry = req.headers.get('cf-ipcountry')
+  if (cfCountry && cfCountry !== 'XX' && cfCountry !== 'T1') {
+    return cfCountry.toUpperCase()
+  }
+
+  const clientIp = extractClientIp(req)
+  if (!clientIp) {
+    return null
+  }
+  const geo = geoip.lookup(clientIp)
+  return geo?.country ?? null
+}
 
 export const formatQuotaResetCountdown = (
   nextQuotaReset: string | null | undefined,
@@ -99,7 +149,6 @@ export async function postChatCompletions(params: {
     req,
     getUserInfoFromApiKey,
     loggerWithContext,
-    trackEvent,
     getUserUsageData,
     getAgentRunFromId,
     fetch,
@@ -108,6 +157,7 @@ export async function postChatCompletions(params: {
     getUserPreferences,
   } = params
   let { logger } = params
+  let { trackEvent } = params
 
   try {
     // Parse request body
@@ -132,6 +182,12 @@ export async function postChatCompletions(params: {
     const typedBody = body as unknown as ChatCompletionRequestBody
     const bodyStream = typedBody.stream ?? false
     const runId = typedBody.codebuff_metadata?.run_id
+
+    // Check if the request is in FREE mode (costs 0 credits for allowed agent+model combos)
+    const costMode = typedBody.codebuff_metadata?.cost_mode
+    const isFreeModeRequest = isFreeMode(costMode)
+
+    trackEvent = withDefaultProperties(trackEvent, { freebuff: isFreeModeRequest })
 
     // Extract and validate API key
     const apiKey = extractApiKeyFromHeader(req)
@@ -200,32 +256,41 @@ export async function postChatCompletions(params: {
       logger,
     })
 
-    // Check if the request is in FREE mode (costs 0 credits for allowed agent+model combos)
-    const costMode = typedBody.codebuff_metadata?.cost_mode
-    const isFreeModeRequest = isFreeMode(costMode)
+    // For free mode requests, check if user is in US or Canada
+    if (isFreeModeRequest) {
+      const countryCode = getCountryCode(req)
+      const clientIp = extractClientIp(req)
 
-    // Check user credits (skip for FREE mode since those requests cost 0 credits)
-    const {
-      balance: { totalRemaining },
-      nextQuotaReset,
-    } = await getUserUsageData({ userId, logger })
-    if (totalRemaining <= 0 && !isFreeModeRequest) {
-      trackEvent({
-        event: AnalyticsEvent.CHAT_COMPLETIONS_INSUFFICIENT_CREDITS,
-        userId,
-        properties: {
-          totalRemaining,
-          nextQuotaReset,
-        },
-        logger,
-      })
-      const resetCountdown = formatQuotaResetCountdown(nextQuotaReset)
-      return NextResponse.json(
-        {
-          message: `Out of credits. Please add credits at ${env.NEXT_PUBLIC_CODEBUFF_APP_URL}/usage. Your free credits reset ${resetCountdown}.`,
-        },
-        { status: 402 },
+      const cfHeader = req.headers.get('cf-ipcountry')
+      const geoipResult = clientIp ? geoip.lookup(clientIp)?.country ?? null : null
+      logger.info(
+        { cfHeader, geoipResult, resolvedCountry: countryCode, clientIp: clientIp ? '[redacted]' : undefined },
+        'Free mode country detection',
       )
+
+      // If we couldn't determine country (null), allow the request (fail open)
+      // This handles users behind VPNs, corporate proxies, or localhost
+      if (countryCode && !FREE_MODE_ALLOWED_COUNTRIES.has(countryCode)) {
+        trackEvent({
+          event: AnalyticsEvent.CHAT_COMPLETIONS_VALIDATION_ERROR,
+          userId,
+          properties: {
+            error: 'free_mode_not_available_in_country',
+            countryCode,
+            clientIp: clientIp ? '[redacted]' : undefined,
+          },
+          logger,
+        })
+
+        return NextResponse.json(
+          {
+            error: 'free_mode_unavailable',
+            message: 'Free mode is not available in your country.',
+          },
+          { status: 403 },
+        )
+      }
+
     }
 
     // Extract and validate agent run ID
@@ -286,8 +351,43 @@ export async function postChatCompletions(params: {
       )
     }
 
+    // Rate limit free mode requests (after validation so invalid requests don't consume quota)
+    if (isFreeModeRequest) {
+      const rateLimitResult = checkFreeModeRateLimit(userId)
+      if (rateLimitResult.limited) {
+        const retryAfterSeconds = Math.ceil(rateLimitResult.retryAfterMs / 1000)
+        const resetTime = new Date(Date.now() + rateLimitResult.retryAfterMs).toISOString()
+        const resetCountdown = formatQuotaResetCountdown(resetTime)
+
+        trackEvent({
+          event: AnalyticsEvent.CHAT_COMPLETIONS_VALIDATION_ERROR,
+          userId,
+          properties: {
+            error: 'free_mode_rate_limited',
+            windowName: rateLimitResult.windowName,
+            retryAfterSeconds,
+          },
+          logger,
+        })
+
+        return NextResponse.json(
+          {
+            error: 'free_mode_rate_limited',
+            message: `Free mode rate limit exceeded (${rateLimitResult.windowName} limit). Try again ${resetCountdown}.`,
+          },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(retryAfterSeconds) },
+          },
+        )
+      }
+    }
+
     // For subscribers, ensure a block grant exists before processing the request.
     // This is done AFTER validation so malformed requests don't start a new 5-hour block.
+    // When the function is provided, always include subscription credits in the balance:
+    // error/null results mean subscription grants have 0 balance, so including them is harmless.
+    const includeSubscriptionCredits = !!ensureSubscriberBlockGrant
     if (ensureSubscriberBlockGrant) {
       try {
         const blockGrantResult = await ensureSubscriberBlockGrant({ userId, logger })
@@ -334,9 +434,34 @@ export async function postChatCompletions(params: {
           { error: getErrorObject(error), userId },
           'Error ensuring subscription block grant',
         )
-        // Fail open: if we can't check the subscription status, allow the request to proceed
-        // This is intentional - we prefer to allow requests rather than block legitimate users
+        // Fail open: proceed with subscription credits included in balance check
       }
+    }
+
+    // Fetch user credit data (includes subscription credits when block grant was ensured)
+    const {
+      balance: { totalRemaining },
+      nextQuotaReset,
+    } = await getUserUsageData({ userId, logger, includeSubscriptionCredits })
+
+    // Credit check
+    if (totalRemaining <= 0 && !isFreeModeRequest) {
+      trackEvent({
+        event: AnalyticsEvent.CHAT_COMPLETIONS_INSUFFICIENT_CREDITS,
+        userId,
+        properties: {
+          totalRemaining,
+          nextQuotaReset,
+        },
+        logger,
+      })
+      const resetCountdown = formatQuotaResetCountdown(nextQuotaReset)
+      return NextResponse.json(
+        {
+          message: `Out of credits. Please add credits at ${env.NEXT_PUBLIC_CODEBUFF_APP_URL}/usage. Your free credits reset ${resetCountdown}.`,
+        },
+        { status: 402 },
+      )
     }
 
     const openrouterApiKey = req.headers.get(BYOK_OPENROUTER_HEADER)
@@ -344,17 +469,61 @@ export async function postChatCompletions(params: {
     // Handle streaming vs non-streaming
     try {
       if (bodyStream) {
-        // Streaming request
-        const stream = await handleOpenRouterStream({
-          body: typedBody,
-          userId,
-          stripeCustomerId,
-          agentId,
-          openrouterApiKey,
-          fetch,
-          logger,
-          insertMessageBigquery,
-        })
+        // Streaming request — route to SiliconFlow/CanopyWave/Fireworks for supported models
+        const useSiliconFlow = false // isSiliconFlowModel(typedBody.model)
+        const useCanopyWave = false // isCanopyWaveModel(typedBody.model)
+        const useFireworks = isFireworksModel(typedBody.model)
+        const useOpenAIDirect = !useFireworks && isOpenAIDirectModel(typedBody.model)
+        const stream = useSiliconFlow
+          ? await handleSiliconFlowStream({
+              body: typedBody,
+              userId,
+              stripeCustomerId,
+              agentId,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
+          : useCanopyWave
+          ? await handleCanopyWaveStream({
+              body: typedBody,
+              userId,
+              stripeCustomerId,
+              agentId,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
+          : useFireworks
+          ? await handleFireworksStream({
+              body: typedBody,
+              userId,
+              stripeCustomerId,
+              agentId,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
+          : useOpenAIDirect
+          ? await handleOpenAIStream({
+              body: typedBody,
+              userId,
+              stripeCustomerId,
+              agentId,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
+          : await handleOpenRouterStream({
+              body: typedBody,
+              userId,
+              stripeCustomerId,
+              agentId,
+              openrouterApiKey,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
 
         trackEvent({
           event: AnalyticsEvent.CHAT_COMPLETIONS_STREAM_STARTED,
@@ -375,20 +544,16 @@ export async function postChatCompletions(params: {
           },
         })
       } else {
-        // Non-streaming request
+        // Non-streaming request — route to SiliconFlow/CanopyWave/Fireworks for supported models
+        // TEMPORARILY DISABLED: route through OpenRouter
         const model = typedBody.model
-        const modelParts = model.split('/')
-        const shortModelName = modelParts.length > 1 ? modelParts[1] : model
-        const isOpenAIDirectModel =
-          model.startsWith('openai/') &&
-          (OPENAI_SUPPORTED_MODELS as readonly string[]).includes(shortModelName)
-        // Only use OpenAI endpoint for OpenAI models with n parameter
-        // All other models (including non-OpenAI with n parameter) should use OpenRouter
-        const shouldUseOpenAIEndpoint =
-          isOpenAIDirectModel && typedBody.codebuff_metadata?.n !== undefined
+        const useSiliconFlow = false // isSiliconFlowModel(model)
+        const useCanopyWave = false // isCanopyWaveModel(model)
+        const useFireworks = isFireworksModel(model)
+        const shouldUseOpenAIEndpoint = !useFireworks && isOpenAIDirectModel(model)
 
-        const nonStreamRequest = shouldUseOpenAIEndpoint
-          ? handleOpenAINonStream({
+        const nonStreamRequest = useSiliconFlow
+          ? handleSiliconFlowNonStream({
               body: typedBody,
               userId,
               stripeCustomerId,
@@ -397,16 +562,46 @@ export async function postChatCompletions(params: {
               logger,
               insertMessageBigquery,
             })
-          : handleOpenRouterNonStream({
+          : useCanopyWave
+          ? handleCanopyWaveNonStream({
               body: typedBody,
               userId,
               stripeCustomerId,
               agentId,
-              openrouterApiKey,
               fetch,
               logger,
               insertMessageBigquery,
             })
+          : useFireworks
+          ? handleFireworksNonStream({
+              body: typedBody,
+              userId,
+              stripeCustomerId,
+              agentId,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
+          : shouldUseOpenAIEndpoint
+            ? handleOpenAINonStream({
+                body: typedBody,
+                userId,
+                stripeCustomerId,
+                agentId,
+                fetch,
+                logger,
+                insertMessageBigquery,
+              })
+            : handleOpenRouterNonStream({
+                body: typedBody,
+                userId,
+                stripeCustomerId,
+                agentId,
+                openrouterApiKey,
+                fetch,
+                logger,
+                insertMessageBigquery,
+              })
         const result = await nonStreamRequest
 
         trackEvent({
@@ -427,9 +622,26 @@ export async function postChatCompletions(params: {
       if (error instanceof OpenRouterError) {
         openrouterError = error
       }
+      let fireworksError: FireworksError | undefined
+      if (error instanceof FireworksError) {
+        fireworksError = error
+      }
+      let canopywaveError: CanopyWaveError | undefined
+      if (error instanceof CanopyWaveError) {
+        canopywaveError = error
+      }
+      let siliconflowError: SiliconFlowError | undefined
+      if (error instanceof SiliconFlowError) {
+        siliconflowError = error
+      }
+      let openaiError: OpenAIError | undefined
+      if (error instanceof OpenAIError) {
+        openaiError = error
+      }
 
       // Log detailed error information for debugging
       const errorDetails = openrouterError?.toJSON()
+      const providerLabel = siliconflowError ? 'SiliconFlow' : canopywaveError ? 'CanopyWave' : fireworksError ? 'Fireworks' : openaiError ? 'OpenAI' : 'OpenRouter'
       logger.error(
         {
           error: getErrorObject(error),
@@ -443,15 +655,15 @@ export async function postChatCompletions(params: {
             ? typedBody.messages.length
             : 0,
           messages: typedBody.messages,
-          openrouterStatusCode: openrouterError?.statusCode,
-          openrouterStatusText: openrouterError?.statusText,
+          providerStatusCode: (openrouterError ?? fireworksError ?? canopywaveError ?? siliconflowError ?? openaiError)?.statusCode,
+          providerStatusText: (openrouterError ?? fireworksError ?? canopywaveError ?? siliconflowError ?? openaiError)?.statusText,
           openrouterErrorCode: errorDetails?.error?.code,
           openrouterErrorType: errorDetails?.error?.type,
           openrouterErrorMessage: errorDetails?.error?.message,
           openrouterProviderName: errorDetails?.error?.metadata?.provider_name,
           openrouterProviderRaw: errorDetails?.error?.metadata?.raw,
         },
-        'OpenRouter request failed',
+        `${providerLabel} request failed`,
       )
       trackEvent({
         event: AnalyticsEvent.CHAT_COMPLETIONS_ERROR,
@@ -465,8 +677,20 @@ export async function postChatCompletions(params: {
         logger,
       })
 
-      // Pass through OpenRouter provider-specific errors
+      // Pass through provider-specific errors
       if (error instanceof OpenRouterError) {
+        return NextResponse.json(error.toJSON(), { status: error.statusCode })
+      }
+      if (error instanceof FireworksError) {
+        return NextResponse.json(error.toJSON(), { status: error.statusCode })
+      }
+      if (error instanceof CanopyWaveError) {
+        return NextResponse.json(error.toJSON(), { status: error.statusCode })
+      }
+      if (error instanceof SiliconFlowError) {
+        return NextResponse.json(error.toJSON(), { status: error.statusCode })
+      }
+      if (error instanceof OpenAIError) {
         return NextResponse.json(error.toJSON(), { status: error.statusCode })
       }
 

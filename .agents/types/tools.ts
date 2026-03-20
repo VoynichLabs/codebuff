@@ -3,6 +3,7 @@
  */
 export type ToolName =
   | 'add_message'
+  | 'apply_patch'
   | 'ask_user'
   | 'code_search'
   | 'end_turn'
@@ -33,6 +34,7 @@ export type ToolName =
  */
 export interface ToolParamsMap {
   add_message: AddMessageParams
+  apply_patch: ApplyPatchParams
   ask_user: AskUserParams
   code_search: CodeSearchParams
   end_turn: EndTurnParams
@@ -65,6 +67,21 @@ export interface ToolParamsMap {
 export interface AddMessageParams {
   role: 'user' | 'assistant'
   content: string
+}
+
+/**
+ * Apply a file operation (create, update, or delete) using Codex-style apply_patch format.
+ */
+export interface ApplyPatchParams {
+  /** The file operation to perform. */
+  operation: {
+    /** Operation type: create_file, update_file, or delete_file */
+    type: 'create_file' | 'update_file' | 'delete_file'
+    /** File path relative to project root */
+    path: string
+    /** Diff content. Required for create_file and update_file. Lines prefixed with + for creates, unified diff with @@ hunks for updates. */
+    diff?: string
+  }
 }
 
 /**
@@ -178,7 +195,7 @@ export interface ProposeWriteFileParams {
   path: string
   /** What the change is intended to do in only one sentence. */
   instructions: string
-  /** Edit snippet to apply to the file. */
+  /** Complete file content to write to the file. */
   content: string
 }
 
@@ -319,14 +336,14 @@ export interface WebSearchParams {
 }
 
 /**
- * Create or edit a file with the given content.
+ * Create or overwrite a file with the given content.
  */
 export interface WriteFileParams {
   /** Path to the file relative to the **project root** */
   path: string
   /** What the change is intended to do in only one sentence. */
   instructions: string
-  /** Edit snippet to apply to the file. */
+  /** Complete file content to write to the file. */
   content: string
 }
 

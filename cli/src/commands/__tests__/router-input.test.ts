@@ -371,5 +371,17 @@ describe('command-registry', () => {
         }
       }
     })
+
+    test('connect command is not available in codebuff (freebuff-only)', () => {
+      const hasConnectSlashCommand = SLASH_COMMANDS.some(
+        (cmd) => cmd.id === 'connect',
+      )
+      expect(hasConnectSlashCommand).toBe(false)
+    })
+
+    test('connect:chatgpt command is not available in codebuff (freebuff-only)', () => {
+      const command = findCommand('connect:chatgpt')
+      expect(command).toBeUndefined()
+    })
   })
 })

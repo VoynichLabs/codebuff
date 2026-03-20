@@ -1,4 +1,7 @@
-import { AGENT_MODES } from '../utils/constants'
+import { CHATGPT_OAUTH_ENABLED } from '@codebuff/common/constants/chatgpt-oauth'
+import { CLAUDE_OAUTH_ENABLED } from '@codebuff/common/constants/claude-oauth'
+import { AGENT_MODES, IS_FREEBUFF } from '../utils/constants'
+import { getChatGptOAuthStatus } from '../utils/chatgpt-oauth'
 import { CREDITS_REFERRAL_BONUS } from '@codebuff/common/old-constants'
 
 import type { SkillsMap } from '@codebuff/common/types/skill'
@@ -21,14 +24,34 @@ export interface SlashCommand {
   insertText?: string
 }
 
-// Generate mode commands from the AGENT_MODES constant
-const MODE_COMMANDS: SlashCommand[] = AGENT_MODES.map((mode) => ({
-  id: `mode:${mode.toLowerCase()}`,
-  label: `mode:${mode.toLowerCase()}`,
-  description: `Switch to ${mode} mode`,
-}))
+// Generate mode commands from the AGENT_MODES constant (excluded in Freebuff)
+const MODE_COMMANDS: SlashCommand[] = IS_FREEBUFF
+  ? []
+  : AGENT_MODES.map((mode) => ({
+      id: `mode:${mode.toLowerCase()}`,
+      label: `mode:${mode.toLowerCase()}`,
+      description: `Switch to ${mode} mode`,
+    }))
 
-export const SLASH_COMMANDS: SlashCommand[] = [
+const FREEBUFF_REMOVED_COMMAND_IDS = new Set([
+  'connect:claude',
+  'ads:enable',
+  'ads:disable',
+  'refer-friends',
+  'usage',
+  'subscribe',
+  'agent:gpt-5',
+  'image',
+  'publish',
+  'init',
+])
+
+const FREEBUFF_ONLY_COMMAND_IDS = new Set([
+  'connect',
+  'plan',
+])
+
+const ALL_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'help',
     label: 'help',
@@ -36,12 +59,27 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['h', '?'],
     implicitCommand: true,
   },
-  {
-    id: 'connect:claude',
-    label: 'connect:claude (deprecated)',
-    description: 'Claude subscription will be removed March 1st',
-    aliases: ['claude'],
-  },
+  ...(CLAUDE_OAUTH_ENABLED
+    ? [
+        {
+          id: 'connect:claude',
+          label: 'connect:claude (deprecated)',
+          description: 'Claude subscription will be removed March 1st',
+          aliases: ['claude'],
+        },
+      ]
+    : []),
+  ...(CHATGPT_OAUTH_ENABLED
+    ? [
+        {
+          id: 'connect',
+          label: 'connect',
+          description: 'Connect your ChatGPT account',
+          aliases: ['connect:chatgpt', 'chatgpt'],
+        },
+      ]
+    : []),
+
   {
     id: 'ads:enable',
     label: 'ads:enable',
@@ -87,6 +125,21 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['strong', 'sub', 'buy-credits'],
   },
   {
+    id: 'interview',
+    label: 'interview',
+    description: 'AI asks a series of questions to flesh out request into a spec',
+  },
+  {
+    id: 'plan',
+    label: 'plan',
+    description: 'Create a plan with GPT 5.4',
+  },
+  {
+    id: 'review',
+    label: 'review',
+    description: 'Review code changes with GPT 5.4',
+  },
+  {
     id: 'new',
     label: 'new',
     description: 'Clear the conversation history and start a new chat',
@@ -98,11 +151,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     label: 'history',
     description: 'Browse and resume past conversations',
     aliases: ['chats'],
-  },
-  {
-    id: 'review',
-    label: 'review',
-    description: 'Review code changes with GPT-5 Agent',
   },
   {
     id: 'agent:gpt-5',
@@ -119,7 +167,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'feedback',
     label: 'feedback',
-    description: 'Share general feedback about Codebuff',
+    description: IS_FREEBUFF ? 'Share general feedback about Freebuff' : 'Share general feedback about Codebuff',
   },
   {
     id: 'bash',
@@ -160,6 +208,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
 ]
 
+export const SLASH_COMMANDS = IS_FREEBUFF
+  ? ALL_SLASH_COMMANDS.filter(
+      (cmd) => !FREEBUFF_REMOVED_COMMAND_IDS.has(cmd.id),
+    )
+  : ALL_SLASH_COMMANDS.filter(
+      (cmd) => !FREEBUFF_ONLY_COMMAND_IDS.has(cmd.id),
+    )
+
 export const SLASHLESS_COMMAND_IDS = new Set(
   SLASH_COMMANDS.filter((cmd) => cmd.implicitCommand).map((cmd) =>
     cmd.id.toLowerCase(),
@@ -187,5 +243,16 @@ export function getSlashCommandsWithSkills(skills: SkillsMap): SlashCommand[] {
     description: truncateDescription(skill.description),
   }))
 
-  return [...SLASH_COMMANDS, ...skillCommands]
+  let commands = [...SLASH_COMMANDS, ...skillCommands]
+
+  if (IS_FREEBUFF && !getChatGptOAuthStatus().connected) {
+    commands = commands.map((cmd) => {
+      if (cmd.id === 'review' || cmd.id === 'plan') {
+        return { ...cmd, description: 'Connect required. ' + cmd.description }
+      }
+      return cmd
+    })
+  }
+
+  return commands
 }

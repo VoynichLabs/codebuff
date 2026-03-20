@@ -1,5 +1,9 @@
+import { CHATGPT_OAUTH_ENABLED } from '@codebuff/common/constants/chatgpt-oauth'
+import { CLAUDE_OAUTH_ENABLED } from '@codebuff/common/constants/claude-oauth'
 import {
+  getChatGptOAuthCredentials,
   getClaudeOAuthCredentials,
+  getValidChatGptOAuthCredentials,
   getValidClaudeOAuthCredentials,
 } from '@codebuff/sdk'
 import { enableMapSet } from 'immer'
@@ -8,6 +12,7 @@ import { initializeThemeStore } from '../hooks/use-theme'
 import { setProjectRoot } from '../project-files'
 import { initTimestampFormatter } from '../utils/helpers'
 import { enableManualThemeRefresh } from '../utils/theme-system'
+import { initAnalytics } from '../utils/analytics'
 import { initializeDirenv } from './init-direnv'
 
 export async function initializeApp(params: { cwd?: string }): Promise<void> {
@@ -16,6 +21,14 @@ export async function initializeApp(params: { cwd?: string }): Promise<void> {
   }
   const baseCwd = process.cwd()
   setProjectRoot(baseCwd)
+
+  // Initialize analytics before direnv, because direnv uses the logger
+  // which calls trackEvent — analytics must be ready first.
+  try {
+    initAnalytics()
+  } catch (error) {
+    console.debug('Failed to initialize analytics:', error)
+  }
 
   // Initialize direnv environment before anything else
   initializeDirenv()
@@ -27,11 +40,22 @@ export async function initializeApp(params: { cwd?: string }): Promise<void> {
 
   // Refresh Claude OAuth credentials in the background if they exist
   // This ensures the subscription status is up-to-date on startup
-  const claudeCredentials = getClaudeOAuthCredentials()
-  if (claudeCredentials) {
-    getValidClaudeOAuthCredentials().catch((error) => {
-      // Log refresh errors at debug level - will be retried on next API call
-      console.debug('Failed to refresh Claude OAuth credentials:', error)
-    })
+  if (CLAUDE_OAUTH_ENABLED) {
+    const claudeCredentials = getClaudeOAuthCredentials()
+    if (claudeCredentials) {
+      getValidClaudeOAuthCredentials().catch((error) => {
+        // Log refresh errors at debug level - will be retried on next API call
+        console.debug('Failed to refresh Claude OAuth credentials:', error)
+      })
+    }
+  }
+
+  if (CHATGPT_OAUTH_ENABLED) {
+    const chatGptCredentials = getChatGptOAuthCredentials()
+    if (chatGptCredentials) {
+      getValidChatGptOAuthCredentials().catch(() => {
+        // Best-effort background refresh.
+      })
+    }
   }
 }
