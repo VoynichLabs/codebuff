@@ -1,11 +1,11 @@
 {
-  "name": "codebuff",
-  "version": "1.0.633",
-  "description": "AI coding agent",
+  "name": "planexe-cli",
+  "version": "1.0.0",
+  "description": "PlanExe CLI — AI planning and coding agent",
   "license": "MIT",
   "bin": {
-    "codebuff": "index.js",
-    "cb": "index.js"
+    "planexe": "index.js",
+    "px": "index.js"
   },
   "scripts": {
     "postinstall": "node postinstall.js",
@@ -33,9 +33,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/CodebuffAI/codebuff.git"
+    "url": "https://github.com/VoynichLabs/codebuff.git"
   },
-  "homepage": "https://codebuff.com",
+  "homepage": "https://github.com/VoynichLabs/codebuff",
   "publishConfig": {
     "access": "public"
   }

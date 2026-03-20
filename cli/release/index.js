@@ -10,7 +10,7 @@ const zlib = require('zlib')
 
 const tar = require('tar')
 
-const packageName = 'codebuff'
+const packageName = 'planexe'
 
 function createConfig(packageName) {
   const homeDir = os.homedir()
@@ -153,7 +153,7 @@ function httpGet(url, options = {}) {
 async function getLatestVersion() {
   try {
     const res = await httpGet(
-      `https://registry.npmjs.org/${packageName}/latest`,
+      `https://registry.npmjs.org/planexe-cli/latest`,
     )
 
     if (res.statusCode !== 200) return null
@@ -280,9 +280,7 @@ async function downloadBinary(version) {
     throw error
   }
 
-  const downloadUrl = `${
-    process.env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com'
-  }/api/releases/download/${version}/${fileName}`
+  const downloadUrl = `https://github.com/VoynichLabs/codebuff/releases/download/v${version}/${fileName}`
 
   // Ensure config directory exists
   fs.mkdirSync(CONFIG.configDir, { recursive: true })
