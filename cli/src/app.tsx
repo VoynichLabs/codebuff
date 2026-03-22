@@ -223,7 +223,7 @@ export const App = ({
         <text
           style={{ wrapMode: 'word', marginBottom: 1, fg: theme.foreground }}
         >
-          {IS_FREEBUFF ? 'Freebuff' : 'Codebuff'} will run commands on your behalf to help you build.
+          {IS_FREEBUFF ? 'Freebuff' : 'PlanExe'} will run commands on your behalf to help you build.
         </text>
         <text
           style={{ wrapMode: 'word', marginBottom: 1, fg: theme.foreground }}

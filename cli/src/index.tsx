@@ -122,8 +122,8 @@ function parseArgs(): ParsedArgs {
   } else {
     // Codebuff: full CLI with all options
     program
-      .name('codebuff')
-      .description('Codebuff CLI - AI-powered coding assistant')
+      .name('planexe')
+      .description('PlanExe CLI - AI-powered planning and coding agent')
       .version(loadPackageVersion(), '-v, --version', 'Print the CLI version')
       .option(
         '--agent <agent-id>',

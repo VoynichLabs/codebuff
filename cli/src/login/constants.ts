@@ -5,7 +5,7 @@ import { IS_FREEBUFF } from '../utils/constants'
 // Get the website URL from environment or use default
 export const WEBSITE_URL = env.NEXT_PUBLIC_CODEBUFF_APP_URL
 
-// PlanExe ASCII Logo with lobster - compact version for 80-width terminals
+// PlanExe ASCII Logo - compact version for 80-width terminals
 const LOGO_CODEBUFF = `
  ██████╗ ██╗      █████╗ ███╗   ██╗███████╗██╗  ██╗███████╗
  ██╔══██╗██║     ██╔══██╗████╗  ██║██╔════╝╚██╗██╔╝██╔════╝
@@ -14,7 +14,11 @@ const LOGO_CODEBUFF = `
  ██║     ███████╗██║  ██║██║ ╚████║███████╗██╔╝ ██╗███████╗
  ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚══════╝
 
-           🦞 Creative Lobster Autonomous Workers 🦞
+      C.L.A.W. - Creative Lobster Autonomous Workers
+                    /)/)
+                   ( ..)  <
+                   /|  |\\
+                  (_|  |_)
 `
 
 const LOGO_SMALL_CODEBUFF = `
@@ -24,7 +28,7 @@ const LOGO_SMALL_CODEBUFF = `
  ██╔═══╝  ██╔██╗
  ██║     ██╔╝ ██╗
  ╚═╝     ╚═╝  ╚═╝
-    🦞 CLAW 🦞
+     C.L.A.W.
 `
 
 // Freebuff ASCII Logo
