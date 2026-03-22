@@ -149,14 +149,10 @@ async function main() {
   const outputFile = join(binDir, outputFilename)
 
   // Collect all NEXT_PUBLIC_* environment variables
-  // NEXT_PUBLIC_CB_ENVIRONMENT defaults to 'prod' for binary releases unless explicitly overridden
+  // Release binaries are always prod. No conditions.
   const binaryEnv = {
     ...process.env,
-    NEXT_PUBLIC_CB_ENVIRONMENT:
-      process.env.NEXT_PUBLIC_CB_ENVIRONMENT === 'dev' ||
-      process.env.NEXT_PUBLIC_CB_ENVIRONMENT === 'test'
-        ? process.env.NEXT_PUBLIC_CB_ENVIRONMENT
-        : 'prod',
+    NEXT_PUBLIC_CB_ENVIRONMENT: 'prod',
   }
   const nextPublicEnvVars = Object.entries(binaryEnv)
     .filter(([key]) => key.startsWith('NEXT_PUBLIC_'))
