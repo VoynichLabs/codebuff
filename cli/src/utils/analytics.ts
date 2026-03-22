@@ -136,14 +136,8 @@ export function initAnalytics() {
   const { env, isProd, createClient, generateAnonymousId } = resolveDeps()
 
   if (!env.NEXT_PUBLIC_POSTHOG_API_KEY || !env.NEXT_PUBLIC_POSTHOG_HOST_URL) {
-    const error = new Error(
-      'NEXT_PUBLIC_POSTHOG_API_KEY or NEXT_PUBLIC_POSTHOG_HOST_URL is not set',
-    )
-    logAnalyticsError(error, {
-      stage: AnalyticsErrorStage.Init,
-      missingEnv: true,
-    })
-    throw error
+    // Analytics disabled — PostHog not configured. This is expected for PlanExe builds.
+    return
   }
 
   // Generate anonymous ID for pre-login tracking
@@ -183,15 +177,7 @@ export function trackEvent(
   const distinctId = getDistinctId()
 
   if (!client) {
-    if (isProd) {
-      const error = new Error('Analytics client not initialized')
-      logAnalyticsError(error, {
-        stage: AnalyticsErrorStage.Track,
-        event,
-        properties,
-      })
-      throw error
-    }
+    // Analytics not available (PostHog not configured). Skip silently.
     return
   }
 
@@ -228,12 +214,8 @@ export function trackEvent(
 
 export function identifyUser(userId: string, properties?: Record<string, any>) {
   if (!client) {
-    const error = new Error('Analytics client not initialized')
-    logAnalyticsError(error, {
-      stage: AnalyticsErrorStage.Identify,
-      properties,
-    })
-    throw error
+    // Analytics not available (PostHog not configured). Skip silently.
+    return
   }
 
   const { isProd } = resolveDeps()
