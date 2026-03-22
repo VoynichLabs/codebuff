@@ -183,7 +183,9 @@ async function main() {
     `--outfile=${outputFile}`,
     '--sourcemap=none',
     ...defineFlags.flatMap(([key, value]) => ['--define', `${key}=${value}`]),
-    '--env "NEXT_PUBLIC_*"', // Copies all current env vars in process.env to the compiled binary that match the pattern.
+    // Note: removed '--env "NEXT_PUBLIC_*"' — it conflicts with --define flags above.
+    // The --env flag re-copies shell env vars and overrides --define values (e.g. CB_ENVIRONMENT=dev from .env).
+    // All NEXT_PUBLIC_* vars are already handled via defineFlags from binaryEnv.
   ]
 
   log(
