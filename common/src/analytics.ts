@@ -65,9 +65,13 @@ export function trackEvent({
   }
 
   if (!client) {
+    if (!env.NEXT_PUBLIC_POSTHOG_API_KEY) {
+      logger.debug('Analytics disabled: NEXT_PUBLIC_POSTHOG_API_KEY not set')
+      return
+    }
     try {
       client = createPostHogClient(env.NEXT_PUBLIC_POSTHOG_API_KEY, {
-        host: env.NEXT_PUBLIC_POSTHOG_HOST_URL,
+        host: env.NEXT_PUBLIC_POSTHOG_HOST_URL ?? 'https://app.posthog.com',
         flushAt: 1,
         flushInterval: 0,
       })

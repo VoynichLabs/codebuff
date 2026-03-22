@@ -1,6 +1,6 @@
 {
   "name": "planexe-cli",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "PlanExe CLI — AI planning and coding agent",
   "license": "MIT",
   "bin": {
