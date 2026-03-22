@@ -152,7 +152,7 @@ export function initAnalytics() {
     })
   } catch (error) {
     logAnalyticsError(error, { stage: AnalyticsErrorStage.Init })
-    throw error
+    return
   }
 }
 
