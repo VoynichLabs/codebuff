@@ -47,7 +47,7 @@ export const getConfigDir = (): string => {
   return path.join(
     os.homedir(),
     '.config',
-    'manicode' +
+    'planexe' +
       // on a development stack?
       (env.NEXT_PUBLIC_CB_ENVIRONMENT !== 'prod'
         ? `-${env.NEXT_PUBLIC_CB_ENVIRONMENT}`

@@ -100,7 +100,7 @@ export async function exchangeCodeForTokens(
   // We need to split it and send both parts
   const splits = authorizationCode.trim().split('#')
   const code = splits[0]
-  const state = splits[1]
+  const state = splits[1] ?? pendingCodeVerifier
 
   // Use the v1 OAuth token endpoint (same as opencode)
   const response = await fetch('https://console.anthropic.com/v1/oauth/token', {
